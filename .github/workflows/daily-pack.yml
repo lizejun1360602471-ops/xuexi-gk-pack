@@ -1,0 +1,51 @@
+name: 每日内容包
+
+# 每天北京时间 05:00 生成内容包并发布（UTC 21:00）
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 生成内容包
+        run: node tools/gen-pack.js
+
+      - name: 发布到仓库根目录（供 raw / jsDelivr 直接读取）
+        run: |
+          if [ ! -f dist/pack.json ]; then
+            echo "没有新内容，跳过发布"
+            exit 0
+          fi
+          cp dist/pack.json ./pack.json
+          git config user.name  "gk-bot"
+          git config user.email "gk-bot@users.noreply.github.com"
+          git add pack.json
+          git diff --cached --quiet || git commit -m "chore: 内容包 $(date -u +%F)"
+          git push
+
+      # 如果启用了 GitHub Pages（分支 gh-pages），顺便同步一份
+      - name: 同步到 gh-pages
+        continue-on-error: true
+        run: |
+          if [ ! -f dist/pack.json ]; then exit 0; fi
+          mkdir -p /tmp/pub && cp dist/pack.json /tmp/pub/pack.json
+          cd /tmp/pub
+          git init -q -b gh-pages
+          git config user.name  "gk-bot"
+          git config user.email "gk-bot@users.noreply.github.com"
+          cp /tmp/pub/pack.json .
+          git add pack.json
+          git commit -qm "pack $(date -u +%F)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
