@@ -19,33 +19,38 @@ jobs:
         with:
           node-version: "20"
 
+      # 不管脚本被传到哪一层，都自动找到它；找不到就把真实结构打印出来
+      - name: 定位打包脚本
+        id: locate
+        run: |
+          echo "===== 仓库当前文件结构 ====="
+          find . -type f -not -path './.git/*' | sort
+          echo "============================"
+
+          SCRIPT=$(find . -name gen-pack.js -not -path './.git/*' | head -n 1)
+          if [ -z "$SCRIPT" ]; then
+            echo "::error::仓库里没有 gen-pack.js。请把 tools 文件夹上传到仓库根目录，使路径为 tools/gen-pack.js"
+            exit 1
+          fi
+          ROOT=$(dirname "$(dirname "$SCRIPT")")
+          echo "script=$SCRIPT" >> "$GITHUB_OUTPUT"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "✓ 找到脚本：$SCRIPT"
+          echo "✓ 项目根目录：$ROOT"
+
       - name: 生成内容包
-        run: node tools/gen-pack.js
+        run: node "${{ steps.locate.outputs.script }}"
 
       - name: 发布到仓库根目录（供 raw / jsDelivr 直接读取）
         run: |
-          if [ ! -f dist/pack.json ]; then
+          SRC="${{ steps.locate.outputs.root }}/dist/pack.json"
+          if [ ! -f "$SRC" ]; then
             echo "没有新内容，跳过发布"
             exit 0
           fi
-          cp dist/pack.json ./pack.json
+          cp "$SRC" ./pack.json
           git config user.name  "gk-bot"
           git config user.email "gk-bot@users.noreply.github.com"
           git add pack.json
           git diff --cached --quiet || git commit -m "chore: 内容包 $(date -u +%F)"
           git push
-
-      # 如果启用了 GitHub Pages（分支 gh-pages），顺便同步一份
-      - name: 同步到 gh-pages
-        continue-on-error: true
-        run: |
-          if [ ! -f dist/pack.json ]; then exit 0; fi
-          mkdir -p /tmp/pub && cp dist/pack.json /tmp/pub/pack.json
-          cd /tmp/pub
-          git init -q -b gh-pages
-          git config user.name  "gk-bot"
-          git config user.email "gk-bot@users.noreply.github.com"
-          cp /tmp/pub/pack.json .
-          git add pack.json
-          git commit -qm "pack $(date -u +%F)"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
