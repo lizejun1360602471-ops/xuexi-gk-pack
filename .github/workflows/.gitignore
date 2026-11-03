@@ -1,0 +1,10 @@
+# 构建产物 —— 不需要进仓库
+build/
+out/
+.shots/
+node_modules/
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+*.log
